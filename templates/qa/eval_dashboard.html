@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Evaluation — Compliance Assistant{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mt-3 mb-3">
+    <h2 class="h3 mb-0"><i class="bi bi-graph-up text-primary"></i> Evaluation Dashboard</h2>
+    <form method="post" action="{% url 'qa:run_eval' %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary"
+                onclick="this.disabled=true; this.innerHTML='<i class=\'bi bi-hourglass-split\'></i> Running...'; this.form.submit();">
+            <i class="bi bi-play-circle"></i> Run Evaluation
+        </button>
+    </form>
+</div>
+
+<!-- Gold Questions Summary -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-primary">{{ gold_count }}</h3>
+                <small class="text-muted">Gold Questions</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-success">{{ eval_runs|length }}</h3>
+                <small class="text-muted">Eval Runs</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-info">
+                    {% if latest_run %}{{ latest_run.accuracy|floatformat:1 }}%{% else %}—{% endif %}
+                </h3>
+                <small class="text-muted">Latest Accuracy</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-warning">
+                    {% if latest_run and latest_run.avg_response_time_ms %}
+                    {{ latest_run.avg_response_time_ms|floatformat:0 }}ms
+                    {% else %}—{% endif %}
+                </h3>
+                <small class="text-muted">Avg Response Time</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Eval Runs History -->
+{% if eval_runs %}
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">Evaluation History</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Run Date</th>
+                    <th>Total Qs</th>
+                    <th>Correct Retrievals</th>
+                    <th>Correct Refusals</th>
+                    <th>False Answers</th>
+                    <th>Accuracy</th>
+                    <th>Avg Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in eval_runs %}
+                <tr>
+                    <td>{{ run.run_at|date:"M d, Y H:i" }}</td>
+                    <td>{{ run.total_questions }}</td>
+                    <td><span class="text-success">{{ run.correct_retrievals }}</span></td>
+                    <td><span class="text-info">{{ run.correct_refusals }}</span></td>
+                    <td><span class="text-danger">{{ run.false_answers }}</span></td>
+                    <td>
+                        <strong>{{ run.accuracy|floatformat:1 }}%</strong>
+                    </td>
+                    <td>
+                        {% if run.avg_response_time_ms %}
+                        {{ run.avg_response_time_ms|floatformat:0 }}ms
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Latest Run Details -->
+{% if latest_run %}
+<div class="card">
+    <div class="card-header bg-white">
+        <h5 class="mb-0">Latest Run Details — {{ latest_run.run_at|date:"M d, Y H:i" }}</h5>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>Question</th>
+                    <th>Category</th>
+                    <th>Answer Quality</th>
+                    <th>Retrieval</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for result in latest_results %}
+                <tr>
+                    <td><small>{{ result.gold_question.question|truncatewords:15 }}</small></td>
+                    <td>
+                        <span class="badge bg-secondary">{{ result.gold_question.get_category_display }}</span>
+                    </td>
+                    <td>
+                        {% if result.answer_quality == 'correct' %}
+                        <span class="badge bg-success">Correct</span>
+                        {% elif result.answer_quality == 'partial' %}
+                        <span class="badge bg-warning text-dark">Partial</span>
+                        {% elif result.answer_quality == 'refused' %}
+                        <span class="badge bg-info">Refused (OK)</span>
+                        {% elif result.answer_quality == 'false_refuse' %}
+                        <span class="badge bg-danger">False Refuse</span>
+                        {% else %}
+                        <span class="badge bg-danger">Wrong</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if result.retrieval_correct %}
+                        <i class="bi bi-check-circle-fill text-success"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle-fill text-danger"></i>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if result.response_time_ms %}
+                        <small>{{ result.response_time_ms }}ms</small>
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-graph-up display-4 text-muted"></i>
+        <p class="text-muted mt-3">
+            No evaluation runs yet. Add Gold Questions via the
+            <a href="{% url 'admin:index' %}">admin panel</a>, then click "Run Evaluation".
+        </p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

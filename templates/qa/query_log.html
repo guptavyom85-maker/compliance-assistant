@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Query Log — Compliance Assistant{% endblock %}
+
+{% block content %}
+<h2 class="h3 mt-3 mb-3"><i class="bi bi-clock-history text-primary"></i> Query Log</h2>
+
+{% if queries %}
+<div class="table-responsive">
+    <table class="table table-hover bg-white">
+        <thead class="table-light">
+            <tr>
+                <th style="width:30%">Question</th>
+                <th style="width:30%">Answer</th>
+                <th>User</th>
+                <th>Citations</th>
+                <th>Status</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for q in queries %}
+            <tr>
+                <td>
+                    <small>{{ q.question|truncatewords:20 }}</small>
+                </td>
+                <td>
+                    <small class="text-muted">{{ q.answer|truncatewords:20 }}</small>
+                </td>
+                <td>
+                    <small>{{ q.user.username|default:"anonymous" }}</small>
+                </td>
+                <td>
+                    {% if q.citation_verified %}
+                    <i class="bi bi-patch-check-fill text-success" title="Verified"></i>
+                    {% elif q.flagged %}
+                    <i class="bi bi-exclamation-triangle-fill text-danger" title="Flagged"></i>
+                    {% else %}
+                    <i class="bi bi-dash text-muted"></i>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if q.not_found %}
+                    <span class="badge bg-warning text-dark">Not Found</span>
+                    {% else %}
+                    <span class="badge bg-success">Answered</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <small class="text-muted">{{ q.created_at|date:"M d, H:i" }}</small>
+                    {% if q.response_time_ms %}
+                    <br><small class="text-muted">{{ q.response_time_ms }}ms</small>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5">
+        <i class="bi bi-clock-history display-4 text-muted"></i>
+        <p class="text-muted mt-3">No queries yet. Ask a question to see the log here.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

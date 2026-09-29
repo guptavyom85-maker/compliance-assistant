@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Home — Compliance Assistant{% endblock %}
+
+{% block content %}
+<div class="row mt-3">
+    <div class="col-lg-8">
+        <h1 class="h2 mb-3">
+            <i class="bi bi-shield-check text-primary"></i>
+            RBI/SEBI Regulatory Compliance Assistant
+        </h1>
+        <p class="lead text-muted">
+            Ask questions about RBI and SEBI regulatory documents and get grounded, cited answers
+            directly from the source material.
+        </p>
+
+        <div class="disclaimer mb-4">
+            <i class="bi bi-exclamation-triangle"></i>
+            <strong>Disclaimer:</strong> This tool retrieves and summarizes regulatory text. It is
+            <strong>not legal advice</strong> and does not replace a compliance officer's professional judgment.
+        </div>
+
+        <!-- Quick Ask Form -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-chat-dots"></i> Quick Question</h5>
+                <form method="post" action="{% url 'qa:ask' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <textarea name="question" class="form-control" rows="3"
+                                  placeholder="e.g. What must a lender disclose to a borrower before a digital loan is executed?"
+                                  required></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-send"></i> Ask
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Example Questions -->
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-lightbulb"></i> Example Questions</h5>
+                <div class="list-group list-group-flush">
+                    <a href="{% url 'qa:ask' %}?q=What+must+a+lender+disclose+to+a+borrower+before+a+digital+loan+is+executed"
+                       class="list-group-item list-group-item-action">
+                        What must a lender disclose to a borrower before a digital loan is executed?
+                    </a>
+                    <a href="{% url 'qa:ask' %}?q=What+are+the+restrictions+on+digital+lending+apps+collecting+data"
+                       class="list-group-item list-group-item-action">
+                        What are the restrictions on digital lending apps collecting data?
+                    </a>
+                    <a href="{% url 'qa:ask' %}?q=What+is+the+cooling+off+period+for+digital+loans"
+                       class="list-group-item list-group-item-action">
+                        What is the cooling-off period for digital loans?
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Sidebar -->
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-bar-chart"></i> System Status</h5>
+                <ul class="list-unstyled mb-0">
+                    <li class="d-flex justify-content-between py-2 border-bottom">
+                        <span>Documents Loaded</span>
+                        <strong>{{ stats.total_documents }}</strong>
+                    </li>
+                    <li class="d-flex justify-content-between py-2 border-bottom">
+                        <span>Indexed Documents</span>
+                        <strong>{{ stats.indexed_documents }}</strong>
+                    </li>
+                    <li class="d-flex justify-content-between py-2 border-bottom">
+                        <span>Total Chunks</span>
+                        <strong>{{ stats.total_chunks }}</strong>
+                    </li>
+                    <li class="d-flex justify-content-between py-2">
+                        <span>Queries Answered</span>
+                        <strong>{{ stats.total_queries }}</strong>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-info-circle"></i> About</h5>
+                <p class="small text-muted mb-2">
+                    This is a <strong>Retrieval-Augmented Generation (RAG)</strong> system that
+                    answers compliance questions by retrieving relevant paragraphs from curated
+                    regulatory documents.
+                </p>
+                <p class="small text-muted mb-0">
+                    Every answer is grounded in source text with citations verified against
+                    retrieved content.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
