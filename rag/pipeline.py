@@ -1,74 +1,93 @@
-from .vectorstore import VectorStore
-from .retriever import retrieve
-from .llm import NOT_FOUND_MSG, generate_answer
-from .citation_checker import check_citations
+"""Selectable retrieval and bounded agents with structured evidence validation."""
+from django.conf import settings
+from .vectorstore import VectorStore, corpus_lock
+from .generator import structured_call
+from .schemas import Answer
+from .faithfulness import check_claims
+from .prompts import ANSWER, ANSWER_VERSION, SUPPORT_VERSION
+from .retriever import search_documents
+from .confidence import assess
+from django.utils import timezone
 
-def answer_question(question: str, vector_store_dir: str, api_key: str, top_k: int = 5, threshold: float = 0.3) -> dict:
-    vector_store = VectorStore(vector_store_dir)
-    
-    retrieved = retrieve(question, vector_store, top_k, threshold)
-    
-    if not retrieved:
-        return {
-            'answer': "This information is not found in the loaded documents.",
-            'chunks': [],
-            'citation_check': {},
-            'not_found': True,
-            'retrieval_scores': []
-        }
-        
-    from qa.models import Chunk
-    
-    chunk_ids = [r['chunk_id'] for r in retrieved]
-    
-    db_chunks = {
-        chunk.id: chunk
-        for chunk in Chunk.objects.filter(id__in=chunk_ids).select_related('document')
-    }
-    
-    context_chunks = []
-    for chunk_id in chunk_ids:
-        c = db_chunks.get(chunk_id)
-        if c is None:
-            continue
-        context_chunks.append({
-            'chunk_id': c.id,
-            'text': c.text,
-            'paragraph_id': c.paragraph_id,
-            'page_number': c.page_number,
-            'document_title': c.document.title if c.document else '',
-            'document_status': c.document.status if hasattr(c.document, 'status') else ''
-        })
-        
-    answer = generate_answer(question, context_chunks, api_key)
-    citation_check = check_citations(answer, context_chunks)
-    not_found = answer.strip() == NOT_FOUND_MSG
-    
-    return {
-        'answer': answer,
-        'chunks': context_chunks,
-        'citation_check': citation_check,
-        'not_found': not_found,
-        'retrieval_scores': retrieved
-    }
+def evidence_dict(c):
+    return dict(chunk_id=c.id, document_id=c.document_id, document_title=c.document.title,
+                document_type=c.document.document_type, document_status=c.document.status,
+                source_category=c.document.source_category, paragraph_id=c.paragraph_id,
+                start_page=c.start_page, end_page=c.end_page,
+                printed_pages=c.printed_span, text=c.text, content_sha256=c.content_sha256)
 
-def index_document(document_id: int, vector_store_dir: str) -> int:
-    from qa.models import Document, Chunk
-    
-    doc = Document.objects.get(id=document_id)
-    chunks = Chunk.objects.filter(document=doc).order_by('chunk_index')
-    
-    if not chunks.exists():
-        return 0
-        
-    chunk_ids = []
-    texts = []
-    for chunk in chunks:
-        chunk_ids.append(chunk.id)
-        texts.append(chunk.text)
-        
-    vector_store = VectorStore(vector_store_dir)
-    vector_store.add_chunks(chunk_ids, texts)
-    vector_store.save()
-    
-    return len(chunk_ids)
+def answer_question(question, vector_store_dir=None, api_key=None, top_k=None, threshold=None, mode=None, use_agent=False, user=None):
+    top_k = top_k or settings.RAG_TOP_K
+    threshold = settings.RAG_CONFIDENCE_THRESHOLD if threshold is None else threshold
+    with corpus_lock(vector_store_dir):
+        store = VectorStore(vector_store_dir)
+        manifest = store.manifest
+    chunks = [] if use_agent else search_documents(question, top_k=top_k, mode=mode, store=store, threshold=threshold)
+    agent_run = None
+    if use_agent:
+        from .agent import gather
+        agent_run, chunks = gather(question, user, mode=mode)
+        try:
+            with corpus_lock(vector_store_dir):
+                latest = VectorStore(vector_store_dir)
+                if latest.manifest['corpus_fingerprint'] != manifest['corpus_fingerprint']:
+                    chunks = []
+                    agent_run.error = 'CorpusChanged'
+        except Exception:
+            chunks = []
+            agent_run.error = 'IndexValidationUnavailable'
+    meta, check = {'model': '', 'estimated_cost': None}, None
+    if chunks and agent_run:
+        from .agent import bounded_call
+        from qa.models import AgentStep
+        remaining = settings.RAG_AGENT_TOTAL_TIMEOUT_SECONDS - (timezone.now() - agent_run.started_at).total_seconds()
+        try:
+            output = bounded_call('synthesize', {'question': question, 'passages': chunks}, remaining)
+            answer, meta, check = Answer.model_validate(output['answer']), output['metadata'], output['support']
+            AgentStep.objects.create(run=agent_run, position=agent_run.step_count + 1, step_type='synthesis',
+                output_summary='Structured answer and claim support checks completed.', evidence_chunk_ids=[c['chunk_id'] for c in chunks])
+        except Exception as exc:
+            agent_run.error = type(exc).__name__
+            answer = Answer(answerable=False, claims=[], reason='The bounded agent could not complete verified synthesis in its time budget.')
+            AgentStep.objects.create(run=agent_run, position=agent_run.step_count + 1, step_type='decision',
+                output_summary=answer.reason, error=agent_run.error)
+    elif chunks:
+        answer, meta = structured_call(ANSWER, {'question': question, 'passages': chunks}, Answer, api_key=api_key)
+    else:
+        answer = Answer(answerable=False, claims=[], reason='No sufficient passages found in the loaded sources.')
+    if check is None:
+        check = check_claims(answer, chunks, api_key)
+    checks = {c['claim_id']: c for c in check['claims']}
+    claims = []
+    for claim in answer.claims:
+        item = claim.model_dump()
+        item['support'] = checks[claim.claim_id]
+        item['sources'] = [c for c in chunks if c['chunk_id'] in claim.supporting_chunk_ids]
+        claims.append(item)
+    # No model self-confidence is used. Full semantic support is not a probability.
+    confidence, review_required, reason = assess(answer, check, chunks)
+    payload = dict(answerable=answer.answerable, reason=answer.reason, claims=claims,
+                   confidence_band=confidence, requires_human_review=review_required, review_reason=reason,
+                   evidence_snapshot=chunks, generation_metadata=meta, support_metadata=check['metadata'])
+    if agent_run:
+        agent_run.final_answer_payload = payload
+        agent_run.status = 'completed' if answer.answerable else 'abstained'
+        agent_run.finished_at = timezone.now()
+        agent_run.save()
+    return dict(answer='\n\n'.join(c.text for c in answer.claims) if answer.answerable else answer.reason,
+                answer_payload=payload, chunks=chunks, not_found=not answer.answerable,
+                citation_check=dict(verified=check['supported'], message='All claims supported by cited passages.' if check['supported'] else reason),
+                faithfulness_score=check['faithfulness'], citation_precision=check['citation_precision'],
+                retrieval_scores=[{'chunk_id': c['chunk_id'], 'score': c.get('score', 0)} for c in chunks],
+                agent_run_id=agent_run.pk if agent_run else None,
+                model_name=meta['model'], prompt_version=ANSWER_VERSION, estimated_cost=meta['estimated_cost'],
+                retrieval_config=dict(mode=mode or settings.RAG_RETRIEVAL_MODE, top_k=top_k, threshold=threshold,
+                                      rrf_k=settings.RAG_RRF_K, reranker_model=settings.RERANKER_MODEL,
+                                      corpus_fingerprint=manifest['corpus_fingerprint'],
+                                      generation_id=manifest['generation_id'],
+                                      embedding_model=manifest['embedding_model'],
+                                      support_prompt_version=SUPPORT_VERSION))
+
+def index_document(document_id, vector_store_dir=None):
+    from qa.services.documents import index_document as index
+    return index(document_id, vector_store_dir)

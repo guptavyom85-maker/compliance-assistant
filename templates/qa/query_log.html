@@ -22,7 +22,7 @@
             {% for q in queries %}
             <tr>
                 <td>
-                    <small>{{ q.question|truncatewords:20 }}</small>
+                    <a href="{% url 'qa:answer_detail' q.pk %}">{{ q.question|truncatewords:20 }}</a>
                 </td>
                 <td>
                     <small class="text-muted">{{ q.answer|truncatewords:20 }}</small>
@@ -31,8 +31,8 @@
                     <small>{{ q.user.username|default:"anonymous" }}</small>
                 </td>
                 <td>
-                    {% if q.citation_verified %}
-                    <i class="bi bi-patch-check-fill text-success" title="Verified"></i>
+                    {% if q.answer_payload and q.citation_verified %}
+                    <span>Supported</span>
                     {% elif q.flagged %}
                     <i class="bi bi-exclamation-triangle-fill text-danger" title="Flagged"></i>
                     {% else %}
@@ -40,7 +40,8 @@
                     {% endif %}
                 </td>
                 <td>
-                    {% if q.not_found %}
+                    {% if q.error %}<span class="text-danger">Error</span>
+                    {% elif q.not_found %}
                     <span class="badge bg-warning text-dark">Not Found</span>
                     {% else %}
                     <span class="badge bg-success">Answered</span>

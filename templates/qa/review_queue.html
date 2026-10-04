@@ -1,0 +1,10 @@
+{% extends "base.html" %}{% block content %}
+<h1 class="h3">Needs human review</h1>
+<h2 class="h4">Answers and processing failures</h2>
+{% for q in answers %}<article class="card p-3 mb-2"><a href="{% url 'qa:answer_detail' q.pk %}">{{ q.question }}</a><p>{{ q.review_reason }} {{ q.error }} — {{ q.user }} — {{ q.created_at|timesince }} ago</p>
+<form method="post" action="{% url 'qa:resolve_review' 'answer' q.pk %}">{% csrf_token %}<label>Resolution <select name="status"><option value="resolved">Reviewed/resolved</option><option value="dismissed">Dismissed</option></select></label><label>Notes <textarea name="notes"></textarea></label><button>Record</button></form></article>{% empty %}<p>No open answers.</p>{% endfor %}
+<h2 class="h4">Obligations</h2><ul>{% for o in obligations %}<li><a href="{% url 'qa:obligation_review' o.pk %}">{{ o.obligation_text }}</a> — {{ o.entailment_status }}, {{ o.created_at|timesince }} ago</li>{% empty %}<li>No pending obligations.</li>{% endfor %}</ul>
+<h2 class="h4">Policy findings</h2><ul>{% for f in findings %}<li><a href="{% url 'qa:gap_detail' f.run_id %}#finding-{{ f.pk }}">{{ f.obligation.obligation_text }}</a> — {{ f.status }}, {{ f.run.created_at|timesince }} ago</li>{% empty %}<li>No pending findings.</li>{% endfor %}</ul>
+<h2 class="h4">Extraction errors</h2>{% for e in extractions %}<form method="post" action="{% url 'qa:resolve_review' 'extraction' e.pk %}" class="mb-2">{% csrf_token %}<p>{{ e.document.title }}: {{ e.error }}, {{ e.updated_at|timesince }} ago. Retry through Obligations.</p><input type="hidden" name="status" value="dismissed"><button>Dismiss notification</button></form>{% empty %}<p>No open extraction errors.</p>{% endfor %}
+<h2 class="h4">Index errors</h2><ul>{% for d in documents %}<li>{{ d.title }}: {{ d.index_error }} — <a href="{% url 'qa:document_list' %}">Re-index from Documents</a></li>{% empty %}<li>No index errors.</li>{% endfor %}</ul>
+{% endblock %}

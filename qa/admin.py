@@ -1,63 +1,54 @@
 from django.contrib import admin
-from .models import Document, Chunk, QueryLog, GoldQuestion, EvalRun, EvalResult
+from .models import Document, Chunk, QueryLog, GoldQuestion, GoldEvidence, EvalRun, EvalResult, VectorIndexBuild
+
+class ReadOnlyAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+    def has_change_permission(self, request, obj=None):
+        return False
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 @admin.register(Document)
-class DocumentAdmin(admin.ModelAdmin):
-    list_display = ('title', 'regulator', 'status', 'is_indexed', 'total_chunks', 'uploaded_at')
-    list_filter = ('regulator', 'status', 'is_indexed')
+class DocumentAdmin(ReadOnlyAdmin):
+    list_display = ('title', 'document_type', 'source_category', 'status', 'index_status', 'total_chunks')
+    list_filter = ('document_type', 'source_category', 'index_status')
     search_fields = ('title',)
 
 @admin.register(Chunk)
-class ChunkAdmin(admin.ModelAdmin):
-    list_display = ('document', 'paragraph_id', 'chunk_index', 'page_number')
+class ChunkAdmin(ReadOnlyAdmin):
+    list_display = ('document', 'paragraph_id', 'chunk_index', 'start_page', 'end_page')
     list_filter = ('document',)
     search_fields = ('text', 'paragraph_id')
 
 @admin.register(QueryLog)
-class QueryLogAdmin(admin.ModelAdmin):
-    list_display = ('get_question_truncated', 'user', 'citation_verified', 'flagged', 'not_found', 'created_at')
-    list_filter = ('flagged', 'not_found', 'citation_verified')
-    search_fields = ('question', 'answer')
-    readonly_fields = (
-        'user', 'question', 'answer', 'retrieved_chunk_ids', 
-        'confidence_scores', 'citation_verified', 'flagged', 
-        'not_found', 'created_at', 'response_time_ms'
-    )
+class QueryLogAdmin(ReadOnlyAdmin):
+    list_display = ('question', 'user', 'confidence_band', 'review_required', 'created_at')
 
-    def get_question_truncated(self, obj):
-        return obj.question[:80] + '...' if len(obj.question) > 80 else obj.question
-    get_question_truncated.short_description = 'Question'
+class GoldEvidenceInline(admin.TabularInline):
+    model = GoldEvidence
+    extra = 0
 
 @admin.register(GoldQuestion)
 class GoldQuestionAdmin(admin.ModelAdmin):
-    list_display = ('get_question_truncated', 'category', 'document')
-    list_filter = ('category',)
+    list_display = ('question', 'category', 'split', 'is_active', 'reviewed_at')
+    list_filter = ('split', 'category', 'is_active')
+    readonly_fields = ('reviewed_at', 'reviewed_by')
+    exclude = ('expected_paragraph_ids',)
+    inlines = [GoldEvidenceInline]
 
-    def get_question_truncated(self, obj):
-        return obj.question[:80] + '...' if len(obj.question) > 80 else obj.question
-    get_question_truncated.short_description = 'Question'
-
-class EvalResultInline(admin.TabularInline):
-    model = EvalResult
-    extra = 0
-    readonly_fields = ('gold_question', 'system_answer', 'retrieved_chunk_ids', 'retrieval_correct', 'answer_quality', 'response_time_ms')
-    can_delete = False
+    def save_model(self, request, obj, form, change):
+        obj.reviewed_at = obj.reviewed_by = None
+        super().save_model(request, obj, form, change)
 
 @admin.register(EvalRun)
-class EvalRunAdmin(admin.ModelAdmin):
-    list_display = ('run_at', 'total_questions', 'correct_retrievals', 'correct_refusals', 'get_accuracy')
-    inlines = [EvalResultInline]
-    
-    def get_accuracy(self, obj):
-        return f"{obj.accuracy():.1f}%"
-    get_accuracy.short_description = 'Accuracy'
+class EvalRunAdmin(ReadOnlyAdmin):
+    list_display = ('label', 'run_at', 'status', 'total_questions', 'answer_correctness', 'faithfulness')
 
 @admin.register(EvalResult)
-class EvalResultAdmin(admin.ModelAdmin):
-    list_display = ('get_gold_question_truncated', 'eval_run', 'answer_quality', 'retrieval_correct', 'response_time_ms')
-    list_filter = ('answer_quality', 'retrieval_correct')
-    search_fields = ('gold_question__question', 'system_answer')
-    
-    def get_gold_question_truncated(self, obj):
-        return obj.gold_question.question[:50] + '...' if len(obj.gold_question.question) > 50 else obj.gold_question.question
-    get_gold_question_truncated.short_description = 'Gold Question'
+class EvalResultAdmin(ReadOnlyAdmin):
+    list_display = ('gold_question', 'eval_run', 'correctness_label', 'correctness_score', 'error')
+
+@admin.register(VectorIndexBuild)
+class IndexBuildAdmin(ReadOnlyAdmin):
+    list_display = ('generation_id', 'status', 'is_active', 'vector_count', 'build_finished_at')

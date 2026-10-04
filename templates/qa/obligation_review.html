@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<h1 class="h3">Review obligation</h1>
+<p>{{ obligation.source_document.title }} §{{ obligation.source_paragraph_id }} — PDF {{ obligation.source_start_page }}–{{ obligation.source_end_page }}; printed {{ obligation.source_printed_pages }}</p>
+<blockquote class="border-start p-3">{{ obligation.source_quote }}</blockquote>
+<p>{{ obligation.get_entailment_status_display }}: {{ obligation.entailment_explanation }}</p>
+<p><a href="{% url 'qa:document_file' obligation.source_document_id %}#page={{ obligation.source_start_page }}">Open original source</a></p>
+<form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Record review</button></form>
+<p>Confirmation rechecks the full duty against its current source. Edited or unsupported candidates remain outside gap analysis until support and review requirements are met.</p>
+{% endblock %}

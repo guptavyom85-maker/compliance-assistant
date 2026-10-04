@@ -159,12 +159,19 @@
                             <i class="bi bi-clock-history"></i> Query Log
                         </a>
                     </li>
+                    {% if perms_flags.run_eval %}
                     <li class="nav-item">
                         <a class="nav-link {% if 'eval' in request.resolver_match.url_name %}active{% endif %}"
                             href="{% url 'qa:eval_dashboard' %}">
                             <i class="bi bi-graph-up"></i> Evaluation
                         </a>
                     </li>
+                    {% endif %}
+                    {% if perms_flags.manage_corpus %}<li class="nav-item"><a class="nav-link" href="{% url 'qa:index_status' %}">Index integrity</a></li>{% endif %}
+                    {% if perms_flags.review_obligation %}<li class="nav-item"><a class="nav-link" href="{% url 'qa:obligations' %}">Obligations</a></li>{% endif %}
+                    {% if perms_flags.run_gap %}<li class="nav-item"><a class="nav-link" href="{% url 'qa:gap_create' %}">Policy gap analysis</a></li>{% endif %}
+                    {% if perms_flags.review_queue %}<li class="nav-item"><a class="nav-link" href="{% url 'qa:review_queue' %}">Review queue</a></li><li class="nav-item"><a class="nav-link" href="{% url 'qa:analytics' %}">Analytics</a></li>{% endif %}
+                    <li class="nav-item"><a class="nav-link" href="{% url 'qa:trust' %}">Scope and trust</a></li>
                     {% if user.is_staff %}
                     <li class="nav-item mt-3">
                         <a class="nav-link" href="{% url 'admin:index' %}">

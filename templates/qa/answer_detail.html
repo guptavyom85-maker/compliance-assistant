@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3">{{ query.question }}</h1>
+<p class="disclaimer">Information from loaded sources only; not legal advice. Support checks are automated and can be wrong. Review the original source and its authority.</p>
+{% if query.error %}<p class="alert alert-danger">Processing failed: {{ query.error }}</p>{% endif %}
+{% if query.answer_payload %}
+<p>Evidence confidence: <strong>{{ query.confidence_band }}</strong> (qualitative, not a probability).</p>
+{% if query.review_required %}<p class="alert alert-warning">Human review required: {{ query.review_reason }}</p>{% endif %}
+{% if not query.answer_payload.answerable %}<p>{{ query.answer_payload.reason }}</p>{% endif %}
+{% for claim in query.answer_payload.claims %}
+<article class="card mb-3"><div class="card-body"><p>{{ claim.text }}</p>
+<p><strong>{{ claim.support.status|capfirst }}</strong>: {{ claim.support.explanation }}</p>
+{% for source in claim.sources %}<details><summary>{{ source.document_title }} — §{{ source.paragraph_id }}; PDF {{ source.start_page }}–{{ source.end_page }}, printed {{ source.printed_pages }}</summary>
+<p>{{ source.text }}</p><p>Category: {{ source.source_category }}; status: {{ source.document_status }}.</p>
+<a href="{% url 'qa:document_file' source.document_id %}#page={{ source.start_page }}">Open source PDF</a></details>{% endfor %}
+</div></article>{% endfor %}
+{% else %}<p>{{ query.answer|linebreaksbr }}</p><p>Historical answer: semantic support was not measured.</p>{% endif %}
+<details><summary>Run metadata</summary><p>Model: {{ query.model_name }}; prompt: {{ query.prompt_version }}; time: {{ query.response_time_ms }} ms.</p><pre>{{ query.retrieval_config }}</pre></details>
+{% if query.agent_used %}<details class="mt-3"><summary>Evidence-gathering trace</summary><p>{{ query.agent_run.plan_summary }}</p>
+{% for step in query.agent_run.steps.all %}<article class="border p-2"><h2 class="h6">{{ step.position }} — {{ step.step_type }} {{ step.tool_name }}</h2><pre>{{ step.tool_input }}</pre><p>{{ step.output_summary }}</p><p>{{ step.latency_ms }} ms{% if step.error %} — {{ step.error }}{% endif %}</p></article>{% endfor %}</details>{% endif %}
+{% endblock %}

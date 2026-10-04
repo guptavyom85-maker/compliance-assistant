@@ -46,6 +46,8 @@ venv.bak/
 
 # Vector database
 /vectorstore/
+/backups/
+/tmp/
 
 # IDEs
 .idea/

@@ -1,0 +1,9 @@
+{% extends "base.html" %}{% block content %}
+<h1 class="h3">What this system can be trusted for</h1>
+<p>This application helps locate passages, draft source-linked answers, extract proposed obligations, and compare selected company policies with reviewed obligations.</p>
+<p>It does not provide legal advice, certify compliance, or guarantee complete/current coverage. Uploaded metadata and source versions need verification. Drafts, consultations and reports are not treated as binding obligations.</p>
+<h2 class="h4">Evidence and uncertainty</h2><p>Supported means an automated checker found support in the cited text. The checker can be wrong. Confidence bands are qualitative and uncalibrated. Unsupported, ambiguous and unavailable checks require human review. Retrieval may miss relevant text, especially tables or poorly extracted PDFs.</p>
+<h2 class="h4">Human oversight</h2><p>Obligations require explicit confirmation before gap analysis. Findings remain potential gaps until a reviewer accepts or corrects them. Absence from retrieved policy passages does not establish non-compliance. Check original documents, source dates, applicable entities, conditions and deadlines.</p>
+<h2 class="h4">Privacy and audit</h2><p>Questions, answers, source excerpts and operational traces are saved. Administrators can inspect global records. Selected text is sent to the configured model provider. This deployment uses a shared corpus for authenticated users and does not isolate organizations. Confirm suitability before uploading private documents.</p>
+<h2 class="h4">Operational limits</h2><p>Text PDFs only; OCR is not available. Index mismatches block retrieval. Model errors and time limits can prevent answers. The visible agent trace shows tools and evidence, not private model reasoning. Evaluation may use provisional reference drafts when explicitly requested; those results must not be presented as human-validated accuracy.</p>
+{% endblock %}

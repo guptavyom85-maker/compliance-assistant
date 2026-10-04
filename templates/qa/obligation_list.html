@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% block content %}
+<h1 class="h3">Regulatory obligations</h1>
+<p>Extraction proposes duties from in-force binding sources. Every candidate requires human review before policy analysis. Reports and consultations are excluded.</p>
+{% if perms_flags.extract_obligations %}<h2 class="h5">Extract the next batch</h2>
+{% for doc in documents %}<form method="post" action="{% url 'qa:extract_obligations' doc.pk %}" class="mb-2">{% csrf_token %}<button class="btn btn-outline-primary">{{ doc.title }} — next 10 passages</button> <small>{{ doc.get_source_category_display }}</small></form>{% endfor %}{% endif %}
+<form method="get" class="my-3"><label>Review status <select name="status"><option value="">All</option> <option value="pending">Pending</option><option value="confirmed">Confirmed</option><option value="edited">Edited</option><option value="rejected">Rejected</option></select></label>
+<label>Document <select name="document"><option value="">All</option>{% for doc in documents %}<option value="{{ doc.pk }}">{{ doc.title }}</option>{% endfor %}</select></label>
+<label>Party <input name="party" value="{{ request.GET.party }}"></label><label>Confidence <select name="confidence"><option value="">All</option><option>high</option><option>medium</option><option>low</option></select></label>
+<label>Support <select name="entailment"><option value="">All</option><option value="entailed">Entailed</option><option value="partial">Partial</option><option value="not_entailed">Not entailed</option><option value="unavailable">Unavailable</option></select></label><button>Filter</button></form>
+<table class="table"><thead><tr><th>Obligation</th><th>Source</th><th>Support</th><th>Review</th></tr></thead><tbody>{% for o in obligations %}<tr><td><a href="{% url 'qa:obligation_review' o.pk %}">{{ o.obligation_text }}</a><br>{{ o.obligated_party }}</td><td>{{ o.source_document.title }} §{{ o.source_paragraph_id }}</td><td>{{ o.get_entailment_status_display }}</td><td>{{ o.get_review_status_display }}{% if o.reviewer %} — {{ o.reviewer }}{% endif %}</td></tr>{% empty %}<tr><td colspan="4">No obligations yet. Upload a binding source and run extraction.</td></tr>{% endfor %}</tbody></table>
+<details><summary>Recent extraction progress</summary><ul>{% for r in records %}<li>{{ r.document.title }}: {{ r.status }}, {{ r.obligation_count }} candidates. {{ r.error }}</li>{% endfor %}</ul></details>
+{% endblock %}

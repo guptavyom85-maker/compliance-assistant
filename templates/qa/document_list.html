@@ -5,9 +5,9 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mt-3 mb-3">
     <h2 class="h3 mb-0"><i class="bi bi-file-earmark-text text-primary"></i> Regulatory Documents</h2>
-    <a href="{% url 'qa:document_upload' %}" class="btn btn-primary">
+    {% if perms_flags.upload %}<a href="{% url 'qa:document_upload' %}" class="btn btn-primary">
         <i class="bi bi-upload"></i> Upload Document
-    </a>
+    </a>{% endif %}
 </div>
 
 {% if documents %}
@@ -28,7 +28,8 @@
             {% for doc in documents %}
             <tr>
                 <td>
-                    <strong>{{ doc.title }}</strong>
+                    <a href="{% url 'qa:document_file' doc.pk %}"><strong>{{ doc.title }}</strong></a>
+                    <br><small>{{ doc.get_document_type_display }} · {{ doc.get_source_category_display }}</small>
                     {% if doc.effective_date %}
                     <br><small class="text-muted">Effective: {{ doc.effective_date }}</small>
                     {% endif %}
@@ -49,23 +50,24 @@
                 </td>
                 <td>{{ doc.uploaded_at|date:"M d, Y" }}</td>
                 <td>
-                    {% if not doc.is_indexed %}
+                    {% if perms_flags.index %}
                     <form method="post" action="{% url 'qa:index_document' doc.pk %}" class="d-inline">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-success" title="Parse & Index">
-                            <i class="bi bi-database-add"></i> Index
+                            <i class="bi bi-database-add"></i> {% if doc.is_indexed %}Re-index{% else %}Index{% endif %}
                         </button>
                     </form>
                     {% else %}
-                    <span class="badge bg-success"><i class="bi bi-check"></i> Indexed</span>
+                    <span>{{ doc.get_index_status_display }}</span>
                     {% endif %}
-                    <form method="post" action="{% url 'qa:delete_document' doc.pk %}" class="d-inline ms-1"
+                    {% if perms_flags.delete %}<form method="post" action="{% url 'qa:delete_document' doc.pk %}" class="d-inline ms-1"
                           onsubmit="return confirm('Delete this document and all its chunks?');">
                         {% csrf_token %}
                         <button type="submit" class="btn btn-sm btn-outline-danger" title="Delete">
                             <i class="bi bi-trash"></i>
                         </button>
-                    </form>
+                    </form>{% endif %}
+                    {% if doc.index_error %}<p class="text-danger">Index error: {{ doc.index_error }}</p>{% endif %}
                 </td>
             </tr>
             {% endfor %}
@@ -77,9 +79,9 @@
     <div class="card-body text-center py-5">
         <i class="bi bi-file-earmark-plus display-4 text-muted"></i>
         <p class="text-muted mt-3">No documents uploaded yet. Upload a regulatory PDF to get started.</p>
-        <a href="{% url 'qa:document_upload' %}" class="btn btn-primary">
+        {% if perms_flags.upload %}<a href="{% url 'qa:document_upload' %}" class="btn btn-primary">
             <i class="bi bi-upload"></i> Upload First Document
-        </a>
+        </a>{% endif %}
     </div>
 </div>
 {% endif %}

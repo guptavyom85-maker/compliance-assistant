@@ -1,79 +1,56 @@
-import fitz
+"""Clause extraction retaining PDF spans, bounded to avoid embedding truncation."""
+import hashlib
 import re
+import fitz
 
-def chunk_pdf(pdf_path: str, document_title: str = '') -> list[dict]:
-    """
-    Parses a PDF and splits it into chunks based on regulatory paragraph/clause structures.
-    """
-    try:
-        doc = fitz.open(pdf_path)
-    except Exception as e:
-        raise ValueError(f"Failed to open PDF {pdf_path}: {e}")
-        
-    chunks = []
-    
-    clause_pattern = re.compile(r'^(?:\d+(?:\.\d+)*\.?|\([a-z]\)|\([ivx]+\))\s+', re.IGNORECASE)
-    
-    current_chunk = None
-    chunk_index = 0
-    
-    for page_num in range(doc.page_count):
-        page = doc.load_page(page_num)
-        text = page.get_text("text")
-        
-        lines = text.split('\n')
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            match = clause_pattern.match(line)
-            if match:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                    chunk_index += 1
-                
-                paragraph_id = match.group(0).strip()
-                current_chunk = {
-                    'text': line,
-                    'paragraph_id': paragraph_id,
-                    'page_number': page_num + 1,
-                    'chunk_index': chunk_index,
-                    'metadata': {
-                        'document_title': document_title
-                    }
-                }
-            else:
-                if current_chunk:
-                    current_chunk['text'] += ' ' + line
-                else:
-                    current_chunk = {
-                        'text': line,
-                        'paragraph_id': 'Introduction',
-                        'page_number': page_num + 1,
-                        'chunk_index': chunk_index,
-                        'metadata': {
-                            'document_title': document_title
-                        }
-                    }
-                    
-    if current_chunk:
-        chunks.append(current_chunk)
-        
-    processed_chunks = []
-    for chunk in chunks:
-        chunk['text'] = chunk['text'].strip()
-        if not chunk['text']:
-            continue
-            
-        if len(chunk['text']) < 50 and processed_chunks:
-            prev = processed_chunks[-1]
-            prev['text'] += ' ' + chunk['text']
-        else:
-            processed_chunks.append(chunk)
-            
-    for i, chunk in enumerate(processed_chunks):
-        chunk['chunk_index'] = i
-        
-    return processed_chunks
+CHUNKER_VERSION = '2'
+CLAUSE = re.compile(r'^(\d+(?:\.\d+)*\.?|\([a-z]+\))\s+', re.I)
+STANDALONE_CLAUSE = re.compile(r'^(\d+\.\d+(?:\.\d+)*\.?|\d+\.|\([a-z]+\))$', re.I)
+
+def chunk_pdf(pdf_path, document_title='', printed_page_offset=0):
+    chunks, current = [], None
+    paragraph = 'Unnumbered'
+    with fitz.open(pdf_path) as pdf:
+        if pdf.needs_pass:
+            raise ValueError('Encrypted PDFs are not supported.')
+        for page_index, page in enumerate(pdf):
+            page_no = page_index + 1
+            lines = [line.strip() for line in page.get_text('text').splitlines() if line.strip()]
+            for line_index, line in enumerate(lines):
+                # PDF extraction sometimes puts the paragraph number alone on a
+                # line. Decimal markers are clauses; bare chart numbers are not.
+                match = CLAUSE.match(line)
+                if not match:
+                    marker = STANDALONE_CLAUSE.match(line)
+                    following = lines[line_index + 1] if line_index + 1 < len(lines) else ''
+                    # Chart series contain many isolated decimal values. Treat a
+                    # standalone marker as a clause only when prose follows it.
+                    if marker and len(re.findall(r'[A-Za-z]{2,}', following)) >= 3:
+                        match = marker
+                if match:
+                    paragraph = match.group(1)
+                if current and (match or len(current['text'].split()) + len(line.split()) > 160):
+                    chunks.append(current)
+                    current = None
+                words = line.split()
+                for offset in range(0, len(words), 160):
+                    fragment = ' '.join(words[offset:offset + 160])
+                    if current is None:
+                        current = dict(text=fragment, paragraph_id=paragraph,
+                                       start_page=page_no, end_page=page_no)
+                    else:
+                        current['text'] += ' ' + fragment
+                        current['end_page'] = page_no
+                    if offset + 160 < len(words):
+                        chunks.append(current)
+                        current = None
+    if current:
+        chunks.append(current)
+    for i, chunk in enumerate(chunks):
+        chunk.update(chunk_index=i, page_number=chunk['start_page'],
+                     printed_start_page=str(chunk['start_page'] + printed_page_offset),
+                     printed_end_page=str(chunk['end_page'] + printed_page_offset),
+                     content_sha256=hashlib.sha256(chunk['text'].encode()).hexdigest(),
+                     chunker_version=CHUNKER_VERSION,
+                     metadata={'document_title': document_title})
+    return chunks

@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% block content %}
+<h1 class="h3">Policy gap report #{{ run.pk }}</h1>
+<p>{{ run.policy_document.title }} — {{ run.status }}, {{ run.created_at }}</p>
+<p class="disclaimer">This is an automated comparison of a selected policy against human-confirmed obligations. Missing retrieved evidence is a potential gap, not proof of non-compliance. Review each finding before relying on it.</p>
+<p>Scope: {{ run.scope }}. Counts: {{ run.counts }}.</p>
+{% if run.error %}<p class="alert alert-warning">{{ run.error }}</p>{% endif %}
+<a class="btn btn-primary" href="{% url 'qa:gap_export' run.pk %}">Download PDF report</a>
+<table class="table mt-3"><thead><tr><th>Obligation</th><th>Coverage</th><th>Human review</th></tr></thead><tbody>{% for f in findings %}<tr><td><a href="#finding-{{ f.pk }}">{{ f.regulatory_evidence.obligation_text|default:f.obligation.obligation_text }}</a></td><td>{{ f.get_effective_status_display }}</td><td>{{ f.review_status }}</td></tr>{% endfor %}</tbody></table>
+{% for f in findings %}<article id="finding-{{ f.pk }}" class="card my-3"><div class="card-body"><h2 class="h5">{{ f.get_effective_status_display }}</h2><p>{{ f.regulatory_evidence.obligation_text|default:f.obligation.obligation_text }}</p><p>{{ f.explanation }}</p>
+<h3 class="h6">Regulatory evidence</h3><p>{{ f.regulatory_evidence.document_title }} §{{ f.regulatory_evidence.paragraph_id }} — PDF {{ f.regulatory_evidence.start_page }}–{{ f.regulatory_evidence.end_page }} / printed {{ f.regulatory_evidence.printed_pages }}</p><blockquote>{{ f.regulatory_evidence.text }}</blockquote>
+<h3 class="h6">Policy evidence</h3>{% if f.policy_evidence %}<p>{{ f.policy_evidence.document_title }} §{{ f.policy_evidence.paragraph_id }} — PDF {{ f.policy_evidence.start_page }}–{{ f.policy_evidence.end_page }}</p><blockquote>{{ f.policy_evidence.text }}</blockquote>{% else %}<p>No matching policy passage was established.</p>{% endif %}
+<p>Model: {{ f.model_name }}. Prompt: {{ f.prompt_version }}. Confidence: {{ f.confidence_band }} (uncalibrated).{% if f.error %} Processing issue: {{ f.error }}.{% endif %}</p>
+<p>Human review: {{ f.review_status }} {{ f.reviewer }} {{ f.reviewed_at }}. {{ f.reviewer_notes }}</p>
+<form method="post" action="{% url 'qa:gap_review' f.pk %}">{% csrf_token %}<label>Decision <select name="status"><option value="">Accept automated classification</option>{% for key,label in f.STATUS_CHOICES %}<option value="{{ key }}">Override: {{ label }}</option>{% endfor %}</select></label><label>Review notes <textarea name="notes" maxlength="4000"></textarea></label><button>Record review</button></form>
+</div></article>{% endfor %}
+<details><summary>Configuration</summary><pre>{{ run.configuration }}</pre><p>Corpus fingerprint: {{ run.corpus_fingerprint }}</p></details>
+{% endblock %}

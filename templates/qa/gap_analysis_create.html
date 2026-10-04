@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% block content %}
+<h1 class="h3">Compare company policy with regulations</h1>
+<p class="disclaimer">Potential gaps require human judgment. The system evaluates only the selected policy and confirmed obligations; it cannot certify compliance.</p>
+<form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Analyze policy</button></form>
+<p>Upload and index a company-policy PDF and an in-force binding source first. Extract and confirm obligations before starting. Analysis runs synchronously and may take several minutes.</p>
+<h2 class="h4">Your analyses</h2><ul>{% for run in runs %}<li><a href="{% url 'qa:gap_detail' run.pk %}">#{{ run.pk }} {{ run.policy_document.title }}</a> — {{ run.status }}, {{ run.created_at }}</li>{% empty %}<li>No analyses yet.</li>{% endfor %}</ul>
+{% endblock %}

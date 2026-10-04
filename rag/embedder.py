@@ -1,22 +1,17 @@
+from functools import lru_cache
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from django.conf import settings
 
-_EMBEDDER_INSTANCE = None
+@lru_cache(maxsize=2)
+def get_embedder(model_name=None):
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer(model_name or settings.EMBEDDING_MODEL)
 
-def get_embedder() -> SentenceTransformer:
-    global _EMBEDDER_INSTANCE
-    if _EMBEDDER_INSTANCE is None:
-        _EMBEDDER_INSTANCE = SentenceTransformer('all-MiniLM-L6-v2')
-    return _EMBEDDER_INSTANCE
-
-def embed_texts(texts: list[str]) -> np.ndarray:
+def embed_texts(texts):
     if not texts:
-        return np.array([])
-    embedder = get_embedder()
-    embeddings = embedder.encode(texts, normalize_embeddings=True)
-    return embeddings
+        return np.empty((0, settings.EMBEDDING_DIMENSION), dtype='float32')
+    return np.asarray(get_embedder(settings.EMBEDDING_MODEL).encode(
+        texts, normalize_embeddings=True, batch_size=32), dtype='float32')
 
-def embed_query(query: str) -> np.ndarray:
-    embedder = get_embedder()
-    embedding = embedder.encode([query], normalize_embeddings=True)
-    return embedding[0]
+def embed_query(query):
+    return embed_texts([query])[0]

@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="h3">Review ground truth #{{ question.pk }}</h1>
+<p>A reviewer must read the reference answer and source passages. Confirmation records your identity and time. Saving changes invalidates the earlier review.</p>
+{% if error %}<p class="alert alert-danger">{{ error }}</p>{% endif %}
+<form method="post">{% csrf_token %}<input type="hidden" name="action" value="save">
+<p><label>Question<textarea class="form-control" name="question" required>{{ question.question }}</textarea></label></p>
+<p><label>Reference answer<textarea class="form-control" name="expected_answer">{{ question.expected_answer }}</textarea></label></p>
+<p><label>Review notes<textarea class="form-control" name="expected_answer_notes">{{ question.expected_answer_notes }}</textarea></label></p>
+<p><label>Category<select name="category">{% for key,label in question.CATEGORY_CHOICES %}<option value="{{ key }}" {% if key == question.category %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>
+<label>Split<select name="split">{% for key,label in question.SPLIT_CHOICES %}<option value="{{ key }}" {% if key == question.split %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label></p>
+<p><label>Gold set version<input name="gold_set_version" value="{{ question.gold_set_version }}"></label>
+<label><input type="checkbox" name="is_active" {% if question.is_active %}checked{% endif %}> Active</label></p>
+<button class="btn btn-secondary">Save draft changes</button></form>
+<h2 class="h4 mt-4">Required evidence</h2>
+{% for item,chunks in evidence %}<article class="card p-3 mb-2"><h3 class="h6">{{ item.document.title }} §{{ item.paragraph_id }}</h3>
+{% for c in chunks %}<p>{{ c.text }}</p><p>PDF {{ c.page_span }}; printed {{ c.printed_span }}</p>{% empty %}<p class="text-danger">No matching source — fix this reference.</p>{% endfor %}
+<form method="post">{% csrf_token %}<input name="action" type="hidden" value="remove_evidence"><input name="evidence_id" type="hidden" value="{{ item.pk }}"><button>Remove evidence</button></form></article>{% empty %}<p>No required evidence assigned.</p>{% endfor %}
+<form method="post" class="my-3">{% csrf_token %}<input type="hidden" name="action" value="confirm"><button class="btn btn-success">I reviewed the answer and evidence — confirm</button></form>
+<h2 class="h4">Find source passages</h2>
+<form method="get"><label>Search text<input name="search" value="{{ search }}"></label><button>Search</button></form>
+{% for c in passages %}<details class="my-2"><summary>{{ c.document.title }} §{{ c.paragraph_id }} — PDF {{ c.page_span }}</summary><p>{{ c.text }}</p><form method="post">{% csrf_token %}<input type="hidden" name="action" value="add_evidence"><input type="hidden" name="chunk_id" value="{{ c.id }}"><button>Use as required evidence</button></form></details>{% endfor %}
+{% endblock %}

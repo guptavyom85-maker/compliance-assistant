@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}<h1 class="h3">Index integrity</h1>
+{% if error %}<p class="alert alert-danger">{{ error }}</p>{% else %}<p class="alert alert-success">The active generation matches the current corpus and embedding configuration.</p>{% endif %}
+<dl>{% for key,value in manifest.items %}<dt>{{ key }}</dt><dd>{{ value }}</dd>{% endfor %}</dl>
+<p>Administrators can rebuild with <code>python manage.py rebuild_vector_index</code>.</p>{% endblock %}
