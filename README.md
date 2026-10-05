@@ -1,6 +1,6 @@
 # Compliance Assistant
 
-Django application for source-grounded PDF questions, bounded multi-document research, reviewed obligation extraction and policy gap reports. Phases 0–3 software workflows are implemented; live answer-quality and production acceptance remain pending. The active 15-question gold set was supplied as human-reviewed on 5 October 2026.
+Django application for source-grounded PDF questions, selectable document retrieval, citations, audit history and human-reviewed evaluation. The current demonstrated scope focuses on document upload/indexing, RAG question answering, evidence presentation and evaluation. Obligation extraction and policy gap analysis remain experimental and are excluded from the current validated submission scope. Live answer-quality and production acceptance remain pending. The active 15-question gold set was supplied as human-reviewed on 5 October 2026.
 
 ## Local setup (PowerShell)
 
@@ -37,7 +37,9 @@ Ask questions through the application. First select one to ten indexed reference
 
 Agent execution uses a bounded evidence plan and records tool actions, results and errors on the answer detail page. Dated version comparisons require two dated documents in the same version family. Model loading and synchronous processing can make requests slow; agent timeouts may yield an explicit incomplete/abstaining result.
 
-## Obligations and policy gap reports
+## Experimental obligations and policy gap reports
+
+These workflows exist in the codebase but are outside the current demonstrated and validated submission scope. The notes below describe their intended guarded behavior, not an accepted production capability.
 
 Contributors can extract obligations from indexed, in-force binding regulations, master directions or circulars. Reports and draft consultations are ineligible. Extraction is resumable; a candidate is not usable for gap analysis until a human confirms it and its source support is valid.
 
@@ -93,6 +95,11 @@ Run `manage.py check --deploy` under those settings. A passing Django check does
 
 ## Documentation
 
+- [Professor submission pack](submission/README.md)
+- [Professor-facing project report](submission/PROJECT_REPORT.md)
+- [Demonstration walkthrough](submission/DEMO_WALKTHROUGH.md)
+- [Setup guide](submission/SETUP_GUIDE.md)
+- [Evaluation note](submission/EVALUATION_NOTE.md)
 - [Complete operations walkthrough](FULL_OPERATIONS_WALKTHROUGH.md)
 - [RAG system and code walkthrough](RAG_SYSTEM_CODE_WALKTHROUGH.md)
 - [Current status](PROJECT_STATUS.md)
