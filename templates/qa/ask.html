@@ -3,6 +3,7 @@
 <h1 class="h3">Ask a question</h1>
 <p><a href="{% url 'qa:trust' %}">Read scope, limitations and privacy information</a></p>
 <p class="disclaimer">Answers use only loaded sources. Drafts and reports do not establish binding requirements. Review the cited passages before relying on an answer. This service does not provide legal advice.</p>
+<p class="alert alert-info">Choose the exact source documents for this question. Retrieval, agent tools, generation context, and citations will be restricted to that selection.</p>
 <form method="post" id="question-form">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary" id="submit-question">Get answer</button></form>
 <p class="mt-3 text-muted" id="processing-note">Questions and answers are saved to your audit history. Generation and support checks can take several minutes when a provider is slow.</p>
 <script>

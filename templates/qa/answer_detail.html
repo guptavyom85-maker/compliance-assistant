@@ -2,6 +2,8 @@
 {% block content %}
 <h1 class="h3">{{ query.question }}</h1>
 <p class="disclaimer">Information from loaded sources only; not legal advice. Support checks are automated and can be wrong. Review the original source and its authority.</p>
+{% if query.retrieval_config.document_scope %}<p><strong>Selected source scope:</strong>
+{% for doc in query.retrieval_config.document_scope %}{{ doc.title }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>{% endif %}
 {% if query.error %}<p class="alert alert-danger">Processing failed: {{ query.error }}</p>{% endif %}
 {% if query.answer_payload %}
 <p>Evidence confidence: <strong>{{ query.confidence_band }}</strong> (qualitative, not a probability).</p>

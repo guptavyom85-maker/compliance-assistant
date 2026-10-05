@@ -5,7 +5,7 @@ from .generator import structured_call
 from .schemas import Answer
 from .faithfulness import check_claims
 from .prompts import ANSWER, ANSWER_VERSION, SUPPORT_VERSION
-from .retriever import search_documents
+from .retriever import search_documents, expand_structural_context
 from .confidence import assess
 from django.utils import timezone
 
@@ -16,17 +16,25 @@ def evidence_dict(c):
                 start_page=c.start_page, end_page=c.end_page,
                 printed_pages=c.printed_span, text=c.text, content_sha256=c.content_sha256)
 
-def answer_question(question, vector_store_dir=None, api_key=None, top_k=None, threshold=None, mode=None, use_agent=False, user=None):
+def answer_question(question, vector_store_dir=None, api_key=None, top_k=None, threshold=None, mode=None,
+                    use_agent=False, user=None, document_ids=None):
     top_k = top_k or settings.RAG_TOP_K
     threshold = settings.RAG_CONFIDENCE_THRESHOLD if threshold is None else threshold
     with corpus_lock(vector_store_dir):
         store = VectorStore(vector_store_dir)
         manifest = store.manifest
-    chunks = [] if use_agent else search_documents(question, top_k=top_k, mode=mode, store=store, threshold=threshold)
+    scope_ids = None if document_ids is None else sorted({int(pk) for pk in document_ids})
+    if scope_ids == []:
+        raise ValueError('Select at least one indexed document.')
+    available = {row.document_id for row in store.rows}
+    if scope_ids is not None and not set(scope_ids).issubset(available):
+        raise ValueError('A selected document is no longer available in the active index.')
+    chunks = [] if use_agent else search_documents(question, document_ids=scope_ids, top_k=top_k,
+        mode=mode, document_type=None if scope_ids is not None else 'regulation', store=store, threshold=threshold)
     agent_run = None
     if use_agent:
         from .agent import gather
-        agent_run, chunks = gather(question, user, mode=mode)
+        agent_run, chunks = gather(question, user, mode=mode, document_ids=scope_ids)
         try:
             with corpus_lock(vector_store_dir):
                 latest = VectorStore(vector_store_dir)
@@ -36,6 +44,8 @@ def answer_question(question, vector_store_dir=None, api_key=None, top_k=None, t
         except Exception:
             chunks = []
             agent_run.error = 'IndexValidationUnavailable'
+    if chunks:
+        chunks = expand_structural_context(chunks, store)
     meta, check = {'model': '', 'estimated_cost': None}, None
     if chunks and agent_run:
         from .agent import bounded_call
@@ -82,10 +92,22 @@ def answer_question(question, vector_store_dir=None, api_key=None, top_k=None, t
                 agent_run_id=agent_run.pk if agent_run else None,
                 model_name=meta['model'], prompt_version=ANSWER_VERSION, estimated_cost=meta['estimated_cost'],
                 retrieval_config=dict(mode=mode or settings.RAG_RETRIEVAL_MODE, top_k=top_k, threshold=threshold,
+                                      document_ids=scope_ids,
+                                      document_scope=[dict(id=row.document_id, title=row.document.title,
+                                                           type=row.document.document_type,
+                                                           category=row.document.source_category,
+                                                           status=row.document.status)
+                                                      for row in {r.document_id: r for r in store.rows
+                                                                  if ((scope_ids is None and r.document.document_type == 'regulation')
+                                                                      or (scope_ids is not None and r.document_id in scope_ids))}.values()],
                                       rrf_k=settings.RAG_RRF_K, reranker_model=settings.RERANKER_MODEL,
                                       corpus_fingerprint=manifest['corpus_fingerprint'],
                                       generation_id=manifest['generation_id'],
                                       embedding_model=manifest['embedding_model'],
+                                      ranked_chunk_ids=[c['chunk_id'] for c in chunks
+                                                        if c.get('retrieval_role') != 'structural_neighbor'],
+                                      structural_context_chunk_ids=[c['chunk_id'] for c in chunks
+                                                                    if c.get('retrieval_role') == 'structural_neighbor'],
                                       support_prompt_version=SUPPORT_VERSION))
 
 def index_document(document_id, vector_store_dir=None):

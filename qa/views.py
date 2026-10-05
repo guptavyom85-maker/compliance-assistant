@@ -1,4 +1,6 @@
+import logging
 import time
+import traceback
 from pathlib import Path
 from django.conf import settings
 from django.contrib import messages
@@ -13,6 +15,9 @@ from .permissions import require_perm, can_view_query
 from .services import documents
 from .services.evaluation import run_evaluation, validate_gold, matching_chunks
 from rag.vectorstore import VectorStore, IndexIntegrityError, corpus_lock
+from rag.generator import GenerationError
+
+logger = logging.getLogger(__name__)
 
 def index(request):
     # Do not disclose private corpus/query counts to anonymous visitors.
@@ -32,9 +37,11 @@ def ask_question(request):
         try:
             from rag.agent import needs_agent
             strategy = form.cleaned_data.get('strategy') or 'auto'
+            document_ids = list(form.cleaned_data['documents'].values_list('pk', flat=True))
             result = answer_question(form.cleaned_data['question'],
                 mode=form.cleaned_data.get('retrieval') or settings.RAG_RETRIEVAL_MODE,
-                use_agent=strategy == 'agent' or (strategy == 'auto' and needs_agent(form.cleaned_data['question'])), user=request.user)
+                use_agent=strategy == 'agent' or (strategy == 'auto' and needs_agent(form.cleaned_data['question'])),
+                user=request.user, document_ids=document_ids)
             payload = result['answer_payload']
             log = QueryLog.objects.create(user=request.user, question=form.cleaned_data['question'],
                 answer=result['answer'], answer_payload=payload, not_found=result['not_found'],
@@ -53,10 +60,23 @@ def ask_question(request):
                 log.save(update_fields=['agent_used'])
             return redirect('qa:answer_detail', pk=log.pk)
         except Exception as exc:
-            QueryLog.objects.create(user=request.user, question=form.cleaned_data['question'],
+            # Record only frames and exception class. Exception messages/chains
+            # can contain provider response bodies or private validation inputs.
+            logger.error('Question processing failed (%s).\n%s', type(exc).__name__,
+                         ''.join(traceback.format_list(traceback.extract_tb(exc.__traceback__))))
+            failed = QueryLog.objects.create(user=request.user, question=form.cleaned_data['question'],
                 error=type(exc).__name__, review_required=True, review_reason='Processing failed.',
+                retrieval_config={'document_ids': document_ids,
+                                  'mode': form.cleaned_data.get('retrieval') or settings.RAG_RETRIEVAL_MODE,
+                                  'strategy': strategy},
                 response_time_ms=round((time.monotonic() - started) * 1000))
-            messages.error(request, str(exc) if isinstance(exc, IndexIntegrityError) else 'Unable to process the question. Check index and model configuration or retry.')
+            if isinstance(exc, IndexIntegrityError):
+                message = str(exc)
+            elif isinstance(exc, GenerationError):
+                message = 'The answer service could not return a complete response. Please retry; your question and selected documents are preserved.'
+            else:
+                message = 'Question processing failed. The diagnostic details have been recorded for investigation.'
+            messages.error(request, f'{message} Reference: {failed.pk}.')
     return render(request, 'qa/ask.html', {'form': form})
 
 @require_perm()
@@ -121,7 +141,7 @@ def eval_dashboard(request):
     runs = EvalRun.objects.order_by('-run_at')[:20]
     return render(request, 'qa/eval_dashboard.html', {'runs': runs,
         'gold_errors': validate_gold(list(GoldQuestion.objects.filter(is_active=True))),
-        'questions': GoldQuestion.objects.all()})
+        'questions': GoldQuestion.objects.filter(is_active=True).order_by('split', 'id')})
 
 @require_perm('qa.run_evaluation')
 @require_POST

@@ -306,6 +306,10 @@ Do not manually remove an active vector generation. Establish an approved retent
 
 Open **Ask Question** and enter a specific question about the loaded sources.
 
+Select between one and ten indexed documents in **Reference documents**. The selection is mandatory. Use Ctrl-click on Windows (or Cmd-click on macOS) to select several entries. Only selected documents can enter retrieval, agent tools, generation context, or citations. The answer page repeats the source scope, and the audit record stores document IDs plus title/type/category/status snapshots.
+
+Document selection is authoritative: writing “RBI” or a document name in the question does not automatically select it. If you select only the Shadow Banking document, only that document may be cited. To compare two sources, select both and use Automatic or Multi-step evidence search.
+
 Good questions identify the subject, source or time period when relevant:
 
 - “According to the loaded SEBI consultation, who decides the weekly options expiry day?”
@@ -637,7 +641,7 @@ Check `OPENROUTER_API_KEY`, model names, account/provider availability, network 
 
 ### First question is very slow
 
-Embedding and reranking models are cached only after loading. Initial downloads/model initialization can dominate latency. Agent runs also involve several bounded provider/tool steps.
+The development server preloads the embedding model before accepting requests, and later calls reuse it from memory. On a fresh installation it may first download from Hugging Face; `HF_TOKEN` is optional and only provides higher download limits. A cached model is opened locally without a Hub request. Reranking is still loaded only when first selected. Agent runs also involve several bounded provider/tool steps.
 
 ### Agent abstains or times out
 
@@ -728,7 +732,7 @@ At the time of this guide:
 - Neither source should be used to manufacture confirmed regulatory obligations.
 - The ten source-aligned gold drafts remain unapproved because human review was deferred.
 - Retrieval-only comparison results are provisional and documented in `PROJECT_STATUS.md`.
-- The complete regression suite passes 78 tests with mocked remote providers.
+- The complete regression suite passes 85 tests with mocked remote providers.
 - Real obligation/gap acceptance still needs authorized binding sources, a company policy, human-confirmed duties, and reviewed findings.
 
 ## 19. Recommended first practical session

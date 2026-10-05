@@ -219,6 +219,10 @@ def get_embedder(model_name=None):
 
 The model is cached within the process so repeated requests do not reload it.
 
+The loader first opens an already-downloaded model with `local_files_only=True`. This avoids a Hugging Face network check and anonymous-download warning on normal server restarts. If the model is not cached (such as a fresh installation), it retries with normal Hub download behavior; `HF_TOKEN` is optional and only raises download limits. Routine Transformers checkpoint/progress notices are suppressed, while actual loading exceptions still propagate.
+
+`qa.apps.QaConfig.ready()` preloads this model in the development server's serving process, but not in the autoreloader parent or ordinary management commands. Importing Transformers can take tens of seconds on Windows even when weights are cached. Paying that cost before HTTP starts makes the delay visible at server startup instead of making the first submitted question appear stuck.
+
 ```python
 model.encode(texts, normalize_embeddings=True, batch_size=32)
 ```
@@ -532,12 +536,15 @@ Entry point: `qa.views.ask_question()`.
 The question form supplies:
 
 - Question text.
+- One to ten indexed reference documents; this is a mandatory server-validated scope.
 - Retrieval mode: dense, hybrid, or hybrid rerank.
 - Strategy: automatic, direct, or agent.
 
 Automatic strategy uses `rag.agent.needs_agent()` to detect comparisons, changes, versus wording, and certain multi-part questions.
 
-After `answer_question()` completes, the view saves `QueryLog` with the user, payload, passage IDs, scores, support/confidence, model/configuration, review flag/reason, and total response time. Agent runs are linked to the saved query.
+After `answer_question()` completes, the view saves `QueryLog` with the user, payload, passage IDs, scores, support/confidence, model/configuration, selected document IDs and metadata snapshot, review flag/reason, and total response time. Agent runs are linked to the saved query.
+
+Selected IDs are applied before top-k ranking. Direct retrieval passes `document_ids` into `search_documents`; the agent catalog contains only selected documents, every tool call receives the allowed IDs, and tool inputs plus final evidence are scope-validated. Mentioning a regulator or title in the natural-language question never widens or changes this explicit scope.
 
 If processing fails, the view still stores an error record for operational visibility, but shows a sanitized user message.
 
@@ -758,9 +765,10 @@ qa.views.index_document
 
 ```text
 qa.views.ask_question
+→ validate one-to-ten indexed document selections
 → rag.pipeline.answer_question
 → VectorStore validation
-→ rag.retriever.search_documents
+→ rag.retriever.search_documents restricted to selected IDs
 → rag.generator.structured_call(Answer)
 → rag.faithfulness.check_claims
 → rag.confidence.assess

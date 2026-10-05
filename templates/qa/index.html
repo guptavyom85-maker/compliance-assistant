@@ -24,15 +24,14 @@
         <div class="card mb-4">
             <div class="card-body">
                 <h5 class="card-title"><i class="bi bi-chat-dots"></i> Quick Question</h5>
-                <form method="post" action="{% url 'qa:ask' %}">
-                    {% csrf_token %}
+                <form method="get" action="{% url 'qa:ask' %}">
                     <div class="mb-3">
                         <textarea name="question" class="form-control" rows="3"
                                   placeholder="e.g. What must a lender disclose to a borrower before a digital loan is executed?"
                                   required></textarea>
                     </div>
                     <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-send"></i> Ask
+                        <i class="bi bi-send"></i> Choose source documents
                     </button>
                 </form>
             </div>

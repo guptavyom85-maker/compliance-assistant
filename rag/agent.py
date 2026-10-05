@@ -60,7 +60,8 @@ Arguments must be plain JSON with the indicated names. No code or external tools
             from .tools import execute
             from .retriever import search_documents
             from functools import partial
-            result = execute(data['tool'], data['arguments'], partial(search_documents, mode=data.get('retrieval_mode')))
+            result = execute(data['tool'], data['arguments'], partial(search_documents,
+                mode=data.get('retrieval_mode'), document_type=None), data.get('allowed_document_ids'))
         connection.send({'ok': True, 'result': json.loads(json.dumps(result, default=str))})
     except Exception as exc:
         connection.send({'ok': False, 'error': type(exc).__name__})
@@ -90,7 +91,7 @@ def bounded_call(kind, data, seconds):
         reader.close()
 
 
-def gather(question, user=None, mode=None):
+def gather(question, user=None, mode=None, document_ids=None):
     from qa.models import AgentRun, AgentStep, Document
     run = AgentRun.objects.create(user=user, question=question)
     started = time.monotonic()
@@ -98,8 +99,15 @@ def gather(question, user=None, mode=None):
         return min(settings.RAG_AGENT_STEP_TIMEOUT_SECONDS,
                    settings.RAG_AGENT_TOTAL_TIMEOUT_SECONDS - (time.monotonic() - started))
     try:
-        catalog = list(Document.objects.filter(document_type='regulation').values(
-            'id', 'title', 'version_label', 'version_family', 'source_category', 'status', 'effective_date', 'publication_date'))
+        documents = Document.objects.filter(chunks__isnull=False).distinct()
+        if document_ids is None:
+            documents = documents.filter(document_type='regulation')
+        else:
+            documents = documents.filter(pk__in=document_ids)
+        catalog = list(documents.values('id', 'title', 'document_type', 'version_label',
+            'version_family', 'source_category', 'status', 'effective_date', 'publication_date'))
+        if not catalog:
+            raise ValueError('No searchable documents are available in the selected scope.')
         # Do not pretend unrelated sources are historical versions of one rule.
         if any(term in question.lower() for term in ('what changed', 'amendment', 'previous version')):
             dated = [d for d in catalog if d['version_family'] and d['version_label'] and (d['effective_date'] or d['publication_date'])]
@@ -128,7 +136,9 @@ def gather(question, user=None, mode=None):
             entry = AgentStep.objects.create(run=run, position=position, step_type='tool',
                 tool_name=step.tool, tool_input=step.arguments)
             try:
-                result = bounded_call('tool', dict(**step.model_dump(), retrieval_mode=mode or settings.RAG_RETRIEVAL_MODE), remaining())
+                result = bounded_call('tool', dict(**step.model_dump(),
+                    retrieval_mode=mode or settings.RAG_RETRIEVAL_MODE,
+                    allowed_document_ids=sorted(allowed_ids)), remaining())
                 for row in result:
                     if 'chunk_id' in row:
                         chunks[row['chunk_id']] = row

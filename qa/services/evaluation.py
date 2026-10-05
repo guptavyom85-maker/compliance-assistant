@@ -95,7 +95,8 @@ def run_evaluation(label='evaluation', split='test', mode='dense', allow_unrevie
             row.refusal_correct = row.refused == (not q.is_answerable)
             row.faithfulness_score, row.citation_precision = result['faithfulness_score'], result['citation_precision']
             if q.is_answerable:
-                row.hit_rank, row.recall_at_k = retrieval_metrics(result['chunks'], list(q.evidence.filter(required=True)))
+                ranked = [c for c in result['chunks'] if c.get('retrieval_role') != 'structural_neighbor']
+                row.hit_rank, row.recall_at_k = retrieval_metrics(ranked, list(q.evidence.filter(required=True)))
                 row.retrieval_correct = row.recall_at_k == 1
                 if row.refused:
                     row.correctness_label, row.correctness_score = 'wrong', 0

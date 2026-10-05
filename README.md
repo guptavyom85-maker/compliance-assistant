@@ -1,6 +1,6 @@
 # Compliance Assistant
 
-Django application for source-grounded PDF questions, bounded multi-document research, reviewed obligation extraction and policy gap reports. Phases 0–3 software workflows are implemented; human/live acceptance remains pending. The user deferred gold-answer review while implementation continued.
+Django application for source-grounded PDF questions, bounded multi-document research, reviewed obligation extraction and policy gap reports. Phases 0–3 software workflows are implemented; live answer-quality and production acceptance remain pending. The active 15-question gold set was supplied as human-reviewed on 5 October 2026.
 
 ## Local setup (PowerShell)
 
@@ -33,7 +33,7 @@ Document removal retains uploaded bytes for recovery. No automated retention cle
 
 ## Questions and evidence
 
-Ask questions through the application. Choose dense, hybrid (BM25 + dense), or hybrid with cross-encoder reranking; choose automatic, direct or agent strategy. Claims cite database-derived source metadata. Semantic validation may report supported, partial, unsupported, contradicted or unavailable. Qualitative confidence bands are not calibrated probabilities. Automated support checks do not establish legal correctness.
+Ask questions through the application. First select one to ten indexed reference documents; retrieval, agent tools and citations are restricted to those sources. Then choose dense, hybrid (BM25 + dense), or hybrid with cross-encoder reranking, and automatic, direct or agent strategy. Claims cite database-derived source metadata. Semantic validation may report supported, partial, unsupported, contradicted or unavailable. Qualitative confidence bands are not calibrated probabilities. Automated support checks do not establish legal correctness.
 
 Agent execution uses a bounded evidence plan and records tool actions, results and errors on the answer detail page. Dated version comparisons require two dated documents in the same version family. Model loading and synchronous processing can make requests slow; agent timeouts may yield an explicit incomplete/abstaining result.
 

@@ -4,7 +4,7 @@
 
 Each active answerable question needs a reference answer, reviewer identity/timestamp and required source evidence. Evidence must resolve against the current document and paragraph, with a text anchor where repeated paragraph labels need disambiguation. Unanswerable questions also require review. Editing questions or their evidence through the application invalidates approval.
 
-The two supplied PDFs concern derivatives-market consultation and financial stability. The old digital-lending question set is retained as history and is inactive. Ten new unapproved drafts cover only these documents. Development and test splits each contain five questions. This is a small smoke benchmark; both splits share source documents and do not measure generalization to unseen regulations.
+The active set contains 15 user-supplied, human-reviewed questions covering the SEBI derivatives consultation, RBI financial-stability report, and SEBI master circular. Eight are development questions and seven are held-out test questions. Older draft and legacy sets remain inactive history. The active questions share source documents and do not measure generalization to unseen regulations.
 
 ## Metric definitions
 
@@ -23,9 +23,9 @@ Operational failures are shown in run coverage and mark a run partial. Unavailab
 
 The structured judge receives reference answers, required evidence and generated claims. Its model, prompt version and explanation are saved. Run configuration records the source fingerprint and gold snapshot. Automated judgments still need comparison with human judgments before claims of model accuracy are made.
 
-Human gold review was deferred at the user's request. Explicit `--allow-unreviewed` experiments remain provisional and do not approve references. `--retrieval-only` skips answer generation, semantic judgments and refusal scoring. Historical combined accuracy is not comparable. Cost is displayed as unknown rather than assumed free.
+The replacement set was recorded as human-reviewed on 5 October 2026 with resolving paragraph and text anchors. Explicit `--allow-unreviewed` experiments remain provisional and do not approve references. `--retrieval-only` skips answer generation, semantic judgments and refusal scoring. Historical combined accuracy is not comparable. Cost is displayed as unknown rather than assumed free.
 
-On 4 October 2026, retrieval-only test runs 3–5 completed without errors against 485 chunks. Dense/hybrid/reranked Hit@1 was 0.75/0.75/1.00; Recall@5 was 0.875/1.00/0.875; MRR was 0.8333/0.875/1.00. Hit@5 was 1.00 for all three. These scores use only the answerable subset of the five-question test split. See PROJECT_STATUS.md for timings. Cold model startup is included, disproportionately affecting the first dense run; no controlled speedup claim is justified.
+On 4 October 2026, retrieval-only test runs 3–5 completed against the older 485-chunk corpus and older five-question test snapshot. Dense/hybrid/reranked Hit@1 was 0.75/0.75/1.00; Recall@5 was 0.875/1.00/0.875; MRR was 0.8333/0.875/1.00. Those historical results are not a baseline for the replacement set or current 1,386-chunk corpus. A fresh evaluation is required.
 
 No live answer-quality baseline or human judge-agreement result has been established. Administrators can now label EvalResult correctness through the evaluation screen; reviewer/time/notes are appended to run audit history and agreement is computed over labeled results. Thresholds and qualitative confidence remain uncalibrated. Tune on development data only, then freeze settings before an accepted test run.
 

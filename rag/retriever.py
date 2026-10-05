@@ -1,7 +1,15 @@
+import re
 from django.conf import settings
 from .vectorstore import VectorStore, corpus_lock
 from .lexical import search as lexical_search
 from .reranker import rerank
+
+LIST_INTRO_RE = re.compile(
+    r'\b(?:following|below)\b.{0,120}\b(?:measures|changes|proposals|steps|requirements|principles)\b'
+    r'|\bas follows\b',
+    re.IGNORECASE | re.DOTALL,
+)
+NUMERIC_CLAUSE_RE = re.compile(r'^\d+(?:\.\d+)*\.?$')
 
 def evidence_dict(c):
     return dict(chunk_id=c.id, document_id=c.document_id, document_title=c.document.title,
@@ -9,6 +17,70 @@ def evidence_dict(c):
                 source_category=c.document.source_category, paragraph_id=c.paragraph_id,
                 start_page=c.start_page, end_page=c.end_page,
                 printed_pages=c.printed_span, text=c.text, content_sha256=c.content_sha256)
+
+
+def _numeric_clause_path(paragraph_id):
+    value = (paragraph_id or '').strip()
+    if not NUMERIC_CLAUSE_RE.fullmatch(value):
+        return None
+    return tuple(int(part) for part in value.rstrip('.').split('.'))
+
+
+def expand_structural_context(ranked, store, max_chunks=None):
+    """Add numbered child clauses when a retrieved passage introduces a list.
+
+    Semantic ranking often retrieves a sentence such as "the following measures"
+    while omitting the adjacent 5.1, 5.2, ... chunks that contain the answer. This
+    expansion is deliberately narrow: it only follows numeric descendants within
+    the same document and stops at the next section. Ranked hits remain identified
+    separately so retrieval evaluation can still measure the configured top-k.
+    """
+    max_chunks = max_chunks or getattr(settings, 'RAG_MAX_CONTEXT_CHUNKS', 20)
+    expanded = [dict(item, retrieval_role=item.get('retrieval_role', 'ranked')) for item in ranked]
+    if not expanded or len(expanded) >= max_chunks:
+        return expanded[:max_chunks]
+
+    seen = {item['chunk_id'] for item in expanded}
+    rows_by_document = {}
+    for row in sorted(store.rows, key=lambda item: (item.document_id, item.chunk_index, item.id)):
+        rows_by_document.setdefault(row.document_id, []).append(row)
+
+    for anchor in ranked:
+        if len(expanded) >= max_chunks or not LIST_INTRO_RE.search(anchor.get('text', '')):
+            continue
+        anchor_path = _numeric_clause_path(anchor.get('paragraph_id'))
+        if not anchor_path:
+            continue
+        rows = rows_by_document.get(anchor['document_id'], [])
+        anchor_position = next((n for n, row in enumerate(rows) if row.id == anchor['chunk_id']), None)
+        if anchor_position is None:
+            continue
+
+        found_descendant = False
+        for row in rows[anchor_position + 1:]:
+            path = _numeric_clause_path(row.paragraph_id)
+            if path:
+                is_descendant = len(path) > len(anchor_path) and path[:len(anchor_path)] == anchor_path
+                if not is_descendant:
+                    # Once the numbered list starts, its next sibling/section is a
+                    # reliable structural boundary. Before it starts, do not roam.
+                    break
+                found_descendant = True
+            elif not found_descendant:
+                break
+
+            if row.id not in seen:
+                item = evidence_dict(row)
+                item.update(
+                    score=anchor.get('score', 0),
+                    retrieval_role='structural_neighbor',
+                    expanded_from_chunk_id=anchor['chunk_id'],
+                )
+                expanded.append(item)
+                seen.add(row.id)
+                if len(expanded) >= max_chunks:
+                    break
+    return expanded
 
 def fuse(dense, lexical, k=60, dense_weight=1., lexical_weight=1.):
     scores = {}
@@ -32,8 +104,10 @@ def search_documents(query, document_ids=None, top_k=None, mode=None, document_t
     threshold = settings.RAG_CONFIDENCE_THRESHOLD if threshold is None else threshold
     if mode not in ('dense', 'hybrid', 'hybrid_rerank'):
         raise ValueError('Unknown retrieval mode.')
-    allowed = {c.id: c for c in store.rows if c.document.document_type == document_type
-               and (not document_ids or c.document_id in document_ids)}
+    allowed = {c.id: c for c in store.rows if (document_type is None or c.document.document_type == document_type)
+               and (document_ids is None or c.document_id in document_ids)}
+    if not allowed:
+        return []
     # Apply filters before candidate truncation, important when a policy shares the index.
     dense = [(i, s) for i, s in store.search(query, max(1, len(store.rows))) if i in allowed and s >= threshold]
     if mode == 'dense':

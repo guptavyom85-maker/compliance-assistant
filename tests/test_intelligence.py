@@ -1,5 +1,5 @@
 import io
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import fitz
 from django.contrib.auth.models import User, Group
 from django.core.management import call_command
@@ -12,9 +12,10 @@ from qa.services.gap_analysis import run_gap_analysis
 from qa.services.reports import gap_pdf
 from qa.services.analytics import summarize
 from rag.schemas import Extraction, GapJudgment
-from rag.retriever import fuse, search_documents, evidence_dict
+from rag.retriever import fuse, search_documents, evidence_dict, expand_structural_context
 from rag.vectorstore import rebuild, VectorStore
 from rag.agent import gather, needs_agent
+from rag.tools import execute
 from tests.test_foundation import IsolatedCase
 
 
@@ -32,6 +33,21 @@ class RetrievalTests(IsolatedCase):
             result = search_documents('policy', document_ids=[policy.pk], document_type='company_policy', mode='dense', top_k=1)
         self.assertEqual(result[0]['document_id'], policy.pk)
 
+    def test_explicit_document_scope_excludes_better_scoring_other_source(self):
+        other = self.document('Other source')
+        selected = self.document('Selected source')
+        rebuild()
+        ranked = [(other.chunks.get().pk, .99), (selected.chunks.get().pk, .8)]
+        with patch.object(VectorStore, 'search', return_value=ranked):
+            result = search_documents('source', document_ids=[selected.pk], document_type=None,
+                                      mode='dense', top_k=5)
+        self.assertEqual([row['document_id'] for row in result], [selected.pk])
+
+    def test_empty_explicit_scope_does_not_mean_all_documents(self):
+        self.document('Source')
+        rebuild()
+        self.assertEqual(search_documents('source', document_ids=[], document_type=None), [])
+
     def test_lexical_hit_can_survive_dense_threshold(self):
         doc = self.document('Key Fact Statement must be disclosed.')
         rebuild()
@@ -48,6 +64,40 @@ class RetrievalTests(IsolatedCase):
                 result = search_documents('records', mode='hybrid_rerank')
         self.assertEqual(result[0]['reranker_score'], 7.3)
         self.assertNotIn('probability', result[0])
+
+    def test_list_intro_expands_numbered_children_and_stops_at_next_section(self):
+        doc = self.document('5. The following measures shall be adopted.')
+        anchor = doc.chunks.get()
+        anchor.paragraph_id = '5.'
+        anchor.save(update_fields=['paragraph_id'])
+        children = []
+        for index, paragraph in enumerate(('5.1.', '5.1.1.', '5.2.', '6.'), 1):
+            text = f'{paragraph} Clause text'
+            children.append(Chunk.objects.create(
+                document=doc, chunk_index=index, paragraph_id=paragraph, text=text,
+                content_sha256='a' * 64, chunker_version='2', start_page=1, end_page=1,
+            ))
+        store = Mock(rows=list(doc.chunks.all()))
+
+        result = expand_structural_context([dict(evidence_dict(anchor), score=.8)], store)
+
+        self.assertEqual([item['paragraph_id'] for item in result], ['5.', '5.1.', '5.1.1.', '5.2.'])
+        self.assertEqual(result[0]['retrieval_role'], 'ranked')
+        self.assertTrue(all(item['retrieval_role'] == 'structural_neighbor' for item in result[1:]))
+
+    @override_settings(RAG_MAX_CONTEXT_CHUNKS=2)
+    def test_structural_context_respects_configured_cap(self):
+        doc = self.document('3. The following changes apply.')
+        anchor = doc.chunks.get()
+        anchor.paragraph_id = '3.'
+        anchor.save(update_fields=['paragraph_id'])
+        for index, paragraph in enumerate(('3.1.', '3.2.'), 1):
+            Chunk.objects.create(document=doc, chunk_index=index, paragraph_id=paragraph,
+                text=f'{paragraph} Change', content_sha256='b' * 64, chunker_version='2')
+
+        result = expand_structural_context([evidence_dict(anchor)], Mock(rows=list(doc.chunks.all())))
+
+        self.assertEqual(len(result), 2)
 
 
 class AgentTests(IsolatedCase):
@@ -75,6 +125,24 @@ class AgentTests(IsolatedCase):
             run, chunks = gather('Compare rules')
         self.assertEqual(run.status, 'abstained')
         self.assertEqual(chunks, [])
+
+    def test_selected_document_scope_rejects_plan_for_other_source(self):
+        selected = self.document('Selected')
+        other = self.document('Other')
+        plan = {'plan': {'summary': 'Search other.', 'sub_questions': ['Other?'],
+                        'steps': [{'tool': 'search_documents',
+                                   'arguments': {'query': 'other', 'document_ids': [other.pk]}}]}}
+        with patch('rag.agent.bounded_call', return_value=plan):
+            run, chunks = gather('Compare evidence', document_ids=[selected.pk])
+        self.assertEqual(run.status, 'abstained')
+        self.assertEqual(chunks, [])
+        self.assertEqual(run.error, 'ValueError')
+
+    def test_typed_chunk_tool_cannot_read_outside_selected_scope(self):
+        selected = self.document('Selected')
+        other = self.document('Other')
+        with self.assertRaisesMessage(ValueError, 'outside the selected scope'):
+            execute('get_chunks', {'chunk_ids': [other.chunks.get().pk]}, Mock(), [selected.pk])
 
     def test_unknown_tool_plan_is_rejected(self):
         self.document()

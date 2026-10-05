@@ -1,4 +1,4 @@
-ANSWER_VERSION = 'answer-2'
+ANSWER_VERSION = 'answer-3'
 SUPPORT_VERSION = 'support-1'
 CORRECTNESS_VERSION = 'correctness-1'
 
@@ -12,7 +12,9 @@ must be one source-supported factual statement with the supplied numeric chunk I
 Do not invent citations. Account for source category and status: drafts, reports and
 consultations are not binding rules. If adequate evidence is absent, answerable=false,
 claims=[], and give a short reason. Otherwise answerable=true. Do not add an uncited
-summary or disclaimer. The application displays those separately.'''
+summary or disclaimer. If the question's premise or requested count conflicts with
+the passages, explicitly correct it using cited evidence instead of forcing the
+requested count. The application displays disclaimers separately.'''
 
 SUPPORT = UNTRUSTED + ''' Judge each claim ONLY against its own cited passages.
 Return exactly one item per claim_id. supported means the whole claim follows from

@@ -301,6 +301,25 @@ class PermissionTests(IsolatedCase):
             self.assertEqual(self.client.get(reverse(url)).status_code, 200)
         self.assertEqual(self.client.get(reverse('qa:gold_review', args=[q.pk])).status_code, 200)
 
+    def test_question_passes_selected_document_scope_to_pipeline(self):
+        doc = self.document()
+        Document.objects.filter(pk=doc.pk).update(is_indexed=True, index_status='ready')
+        self.client.force_login(self.viewer)
+        with patch('rag.pipeline.answer_question', side_effect=RuntimeError('stop after scope check')) as pipeline:
+            response = self.client.post(reverse('qa:ask'), data={
+                'question': 'What does this source say?', 'documents': [doc.pk],
+                'retrieval': 'dense', 'strategy': 'direct'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(pipeline.call_args.kwargs['document_ids'], [doc.pk])
+
+    def test_question_requires_at_least_one_document(self):
+        self.client.force_login(self.viewer)
+        with patch('rag.pipeline.answer_question') as pipeline:
+            response = self.client.post(reverse('qa:ask'), data={
+                'question': 'Question?', 'retrieval': 'dense', 'strategy': 'direct'})
+        self.assertContains(response, 'This field is required.')
+        pipeline.assert_not_called()
+
     def test_csrf_required(self):
         client = Client(enforce_csrf_checks=True)
         client.force_login(self.admin)
@@ -352,7 +371,33 @@ class EvidenceTests(IsolatedCase):
         self.assertEqual(kwargs['response_format']['type'], 'json_schema')
         self.assertTrue(kwargs['response_format']['json_schema']['strict'])
         self.assertTrue(kwargs['extra_body']['provider']['require_parameters'])
-        self.assertEqual(kwargs['max_tokens'], 1200)
+        self.assertEqual(kwargs['max_tokens'], 4096)
+
+    def test_reasoning_exhausts_budget_then_retries_original_request(self):
+        empty = Mock(usage=None, model='reasoning-model', choices=[Mock(
+            finish_reason='length', message=Mock(content=''))])
+        valid = Mock(usage=None, model='reasoning-model', choices=[Mock(
+            finish_reason='stop', message=Mock(content='{"answerable":false,"claims":[],"reason":"No evidence"}'))])
+        with patch('rag.generator.OpenAI') as client:
+            client.return_value.chat.completions.create.side_effect = [empty, valid]
+            with override_settings(OPENROUTER_MODEL='openrouter/free', OPENROUTER_FALLBACK_MODELS=[],
+                                   LLM_MAX_OUTPUT_TOKENS=4096, LLM_MAX_RETRY_OUTPUT_TOKENS=8192):
+                answer, _ = structured_call('system', {}, Answer, api_key='fake')
+        calls = client.return_value.chat.completions.create.call_args_list
+        self.assertEqual([c.kwargs['max_tokens'] for c in calls], [4096, 8192])
+        self.assertEqual(calls[0].kwargs['messages'], calls[1].kwargs['messages'])
+        self.assertFalse(answer.answerable)
+
+    def test_truncated_valid_json_is_not_accepted_as_complete(self):
+        truncated = Mock(usage=None, model='test', choices=[Mock(finish_reason='length', message=Mock(
+            content='{"answerable":false,"claims":[],"reason":"No evidence"}'))])
+        with patch('rag.generator.OpenAI') as client:
+            client.return_value.chat.completions.create.return_value = truncated
+            with override_settings(OPENROUTER_MODEL='openrouter/free', OPENROUTER_FALLBACK_MODELS=[],
+                                   LLM_MAX_OUTPUT_TOKENS=4096, LLM_MAX_RETRY_OUTPUT_TOKENS=8192):
+                with self.assertRaises(GenerationError):
+                    structured_call('system', {}, Answer, api_key='fake')
+        self.assertEqual(client.return_value.chat.completions.create.call_count, 2)
 
     def test_empty_primary_response_uses_structured_free_fallback(self):
         empty = Mock(usage=None, model='empty-model', choices=[Mock(message=Mock(content=''))])

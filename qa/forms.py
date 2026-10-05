@@ -33,10 +33,26 @@ def validate_pdf(upload):
 
 class QuestionForm(forms.Form):
     question = forms.CharField(max_length=settings.MAX_QUESTION_CHARS, widget=forms.Textarea(attrs={'class': 'form-control', 'rows': 4}))
+    documents = forms.ModelMultipleChoiceField(queryset=Document.objects.none(), required=True,
+        help_text='Select one or more indexed documents. Only these documents may be retrieved or cited.',
+        widget=forms.SelectMultiple(attrs={'class': 'form-select', 'size': 8}))
     retrieval = forms.ChoiceField(choices=[('dense', 'Semantic search'), ('hybrid', 'Combined search'),
         ('hybrid_rerank', 'Combined search with passage ranking')], required=False)
     strategy = forms.ChoiceField(choices=[('auto', 'Automatic'), ('direct', 'Single search'),
         ('agent', 'Multi-step evidence search')], required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        field = self.fields['documents']
+        field.queryset = Document.objects.filter(is_indexed=True).order_by('title', 'id')
+        field.label_from_instance = lambda doc: (
+            f'{doc.title} — {doc.get_source_category_display()} / {doc.get_status_display()}')
+
+    def clean_documents(self):
+        documents = self.cleaned_data['documents']
+        if documents.count() > 10:
+            raise forms.ValidationError('Select at most 10 documents for one question.')
+        return documents
 
 class DocumentUploadForm(forms.ModelForm):
     class Meta:

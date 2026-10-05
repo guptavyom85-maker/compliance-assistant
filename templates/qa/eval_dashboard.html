@@ -10,7 +10,7 @@
 <label><input type="checkbox" name="provisional"> Use unreviewed drafts (provisional results)</label>
 <label><input type="checkbox" name="retrieval_only"> Retrieval only (no answer/judge calls)</label>
 <button class="btn btn-primary">Run evaluation</button></form>
-<h2 class="h4 mt-4">Gold questions</h2>
+<h2 class="h4 mt-4">Active gold questions</h2>
 <ul>{% for q in questions %}<li><a href="{% url 'qa:gold_review' q.pk %}">{{ q.question }}</a> — {{ q.split }}, {% if q.reviewed_at %}reviewed{% else %}unreviewed{% endif %}{% if not q.is_active %}, inactive{% endif %}</li>{% endfor %}</ul>
 {% for run in runs %}
 <section class="card my-3"><div class="card-body"><h2 class="h5">{{ run.label|default:"Historical run" }} — {{ run.run_at }} ({{ run.status }})</h2>

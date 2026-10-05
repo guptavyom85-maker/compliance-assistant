@@ -1,8 +1,11 @@
 """Validated JSON provider boundary with one repair attempt and sanitized errors."""
 import json
+import logging
 import time
 from django.conf import settings
 from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 
 class GenerationError(RuntimeError):
@@ -27,14 +30,17 @@ def structured_call(prompt, data, schema, *, judge=False, api_key=None):
     try:
         for requested_model in models:
             messages = list(base_messages)
+            output_limit = settings.LLM_MAX_OUTPUT_TOKENS
             for attempt in range(2):
                 try:
                     response = client.chat.completions.create(model=requested_model, temperature=0,
-                        max_tokens=settings.LLM_MAX_OUTPUT_TOKENS, messages=messages,
+                        max_tokens=output_limit, messages=messages,
                         response_format={'type': 'json_schema', 'json_schema': {
                             'name': schema.__name__.lower(), 'strict': True, 'schema': schema_json}},
                         extra_body={'provider': {'require_parameters': True}})
                 except Exception as exc:
+                    logger.warning('Structured request failed: model=%s error=%s status=%s',
+                                   requested_model, type(exc).__name__, getattr(exc, 'status_code', None))
                     # An authentication error will not improve on another
                     # model, so stop without multiplying the timeout.
                     if getattr(exc, 'status_code', None) in (401, 403):
@@ -44,9 +50,25 @@ def structured_call(prompt, data, schema, *, judge=False, api_key=None):
                     usage['input_tokens'] += response.usage.prompt_tokens or 0
                     usage['output_tokens'] += response.usage.completion_tokens or 0
                 content = response.choices[0].message.content if response.choices else ''
+                finish_reason = response.choices[0].finish_reason if response.choices else 'no_choices'
+                if finish_reason == 'length':
+                    # Even syntactically valid JSON can be an incomplete answer
+                    # when the provider exhausts its output/reasoning budget.
+                    # Regenerate from the original request, not truncated JSON.
+                    logger.warning('Structured response truncated: model=%s output_limit=%s',
+                                   response.model or requested_model, output_limit)
+                    retry_limit = min(output_limit * 2, settings.LLM_MAX_RETRY_OUTPUT_TOKENS)
+                    if attempt == 0 and retry_limit > output_limit:
+                        output_limit = retry_limit
+                        messages = list(base_messages)
+                        continue
+                    break
                 # Some reasoning endpoints return only internal reasoning and
                 # an empty content field. A repair cannot repair absent output.
                 if not content:
+                    logger.warning('Structured response empty: model=%s finish=%s',
+                                   response.model or requested_model,
+                                   finish_reason)
                     break
                 try:
                     result = schema.model_validate_json(content)
@@ -55,7 +77,12 @@ def structured_call(prompt, data, schema, *, judge=False, api_key=None):
                                     'fallback_used': requested_model != model,
                                     **usage, 'latency_ms': round((time.monotonic() - started) * 1000),
                                     'estimated_cost': None}
-                except ValueError:
+                except ValueError as exc:
+                    # Never log validation inputs or provider bodies: both may
+                    # contain private source text. Error codes identify the cause.
+                    issues = [item['type'] for item in exc.errors(include_input=False)] if hasattr(exc, 'errors') else [type(exc).__name__]
+                    logger.warning('Structured response invalid: model=%s finish=%s issues=%s',
+                                   response.model or requested_model, response.choices[0].finish_reason, issues)
                     if attempt == 1:
                         break
                     messages.append(dict(role='assistant', content=content))
